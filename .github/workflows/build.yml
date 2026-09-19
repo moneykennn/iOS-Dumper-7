@@ -1,50 +1,77 @@
-name: Build Dumper
+name: Build iOS UE Dumper
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build ${{ matrix.scheme }}
     runs-on: macos-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        scheme:
+          - default
+          - rootless
+          - roothide
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
 
-      - name: Xcode version
-        run: xcodebuild -version
+      - name: Setup Theos
+        uses: iossxx/theos-action@v1
+        with:
+          theos-dir: theos
+          theos-src: https://github.com/roothide/theos
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
 
-      - name: List project
+      - name: Show environment
         run: |
-          xcodebuild -project Dumper.xcodeproj -list
+          echo "THEOS=$THEOS"
+          xcodebuild -version
+          clang --version
+          cd Tweak
+          make --version
 
-      - name: Build Dumper
+      - name: Build package
+        working-directory: Tweak
+        shell: bash
         run: |
-          set -o pipefail
+          set -euxo pipefail
 
-          xcodebuild \
-            -project Dumper.xcodeproj \
-            -target Dumper \
-            -configuration Release \
-            -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            | tee build.log
+          if [ "${{ matrix.scheme }}" = "default" ]; then
+            make clean package FINALPACKAGE=1
+          else
+            make clean package \
+              FINALPACKAGE=1 \
+              THEOS_PACKAGE_SCHEME="${{ matrix.scheme }}"
+          fi
 
-      - name: Show build log tail
+      - name: List build output
         if: always()
+        working-directory: Tweak
         run: |
-          echo "===== LAST 100 LINES ====="
-          tail -n 100 build.log || true
+          echo "===== PACKAGES ====="
+          find packages -maxdepth 2 -type f -print 2>/dev/null || true
 
-      - name: Find dylib
-        if: always()
-        run: |
-          find . -type f -name "*.dylib" -print
+          echo "===== DYLIB ====="
+          find .theos -type f -name "*.dylib" -print 2>/dev/null || true
 
-      - name: Upload logs
+      - name: Upload package
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: build.log
+          name: iOS-UE-Dumper-${{ matrix.scheme }}
+          path: |
+            Tweak/packages/*.deb
+            Tweak/.theos/obj/**/*.dylib
+          if-no-files-found: warn
