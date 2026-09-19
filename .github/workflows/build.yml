@@ -1,0 +1,33 @@
+name: Build Dumper
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project Dumper.xcodeproj \
+            -target Dumper \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Find dylib
+        run: |
+          find build -name "*.dylib" -print
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dumper
+          path: build/**/*.dylib
